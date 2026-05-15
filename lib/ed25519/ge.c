@@ -1,6 +1,6 @@
 #include "ge.h"
 #include "precomp_data.h"
-
+#include <pthread.h>
 
 /*
 r = p + q
@@ -63,15 +63,16 @@ where a = a[0]+256*a[1]+...+256^31 a[31].
 and b = b[0]+256*b[1]+...+256^31 b[31].
 B is the Ed25519 base point (x,4/5) with x positive.
 */
-
+static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 void ge_double_scalarmult_vartime(ge_p2 *r, const unsigned char *a, const ge_p3 *A, const unsigned char *b) {
-    signed char aslide[256];
-    signed char bslide[256];
-    ge_cached Ai[8]; /* A,3A,5A,7A,9A,11A,13A,15A */
+    static signed char aslide[256];
+    static signed char bslide[256];
+    static ge_cached Ai[8]; /* A,3A,5A,7A,9A,11A,13A,15A */
     ge_p1p1 t;
     ge_p3 u;
     ge_p3 A2;
     int i;
+    pthread_mutex_lock(&mtx);
     slide(aslide, a);
     slide(bslide, b);
     ge_p3_to_cached(&Ai[0], A);
@@ -127,6 +128,7 @@ void ge_double_scalarmult_vartime(ge_p2 *r, const unsigned char *a, const ge_p3 
 
         ge_p1p1_to_p2(r, &t);
     }
+    pthread_mutex_unlock(&mtx);
 }
 
 
@@ -353,7 +355,7 @@ static void cmov(ge_precomp *t, const ge_precomp *u, unsigned char b) {
 }
 
 
-static void select(ge_precomp *t, int pos, signed char b) {
+static void ge_select(ge_precomp *t, int pos, signed char b) {
     ge_precomp minust;
     unsigned char bnegative = negative(b);
     unsigned char babs = b - (((-bnegative) & b) << 1);
@@ -412,7 +414,7 @@ void ge_scalarmult_base(ge_p3 *h, const unsigned char *a) {
     ge_p3_0(h);
 
     for (i = 1; i < 64; i += 2) {
-        select(&t, i / 2, e[i]);
+        ge_select(&t, i / 2, e[i]);
         ge_madd(&r, h, &t);
         ge_p1p1_to_p3(h, &r);
     }
@@ -427,7 +429,7 @@ void ge_scalarmult_base(ge_p3 *h, const unsigned char *a) {
     ge_p1p1_to_p3(h, &r);
 
     for (i = 0; i < 64; i += 2) {
-        select(&t, i / 2, e[i]);
+        ge_select(&t, i / 2, e[i]);
         ge_madd(&r, h, &t);
         ge_p1p1_to_p3(h, &r);
     }
